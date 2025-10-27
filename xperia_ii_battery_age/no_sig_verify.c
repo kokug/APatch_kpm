@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
-#include <linux/module.h>
 #include <linux/kallsyms.h>
-#include <linux/slab.h>
 
-/* 手动前置声明内核结构体 */
+/* 手动前置声明 */
 struct module_signature {
     u8 algo;
     u8 hash;
@@ -11,13 +9,17 @@ struct module_signature {
     u8 signer_len;
     u8 key_id_len;
     u8 __pad[3];
-    u8 sig_len;        /* 变长数据紧随其后 */
+    u8 sig_len;
 };
 
+/* 常数 */
+#define ENOENT  2
+#define EPERM   1
+
 /* 原始函数指针 */
-static bool (*orig_mod_verify_sig)(const struct module *mod,
-                                   const struct module_signature *sig,
-                                   size_t sig_size);
+static bool (*orig_mod_verify_sig)(const struct module *,
+                                   const struct module_signature *,
+                                   size_t);
 
 /* 永远返回验证成功 */
 static bool fake_mod_verify_sig(const struct module *mod,
@@ -34,35 +36,29 @@ static void *hook_stub;
 extern int inline_hook(void *target, void *new, void **old);
 extern int inline_unhook(void *stub);
 
-/* 模块入口 */
-static int no_sig_init(void)
+/* 模块入口：签名与 KPM 约定一致 */
+static long no_sig_init(const char *args, const char *event, void *reserved)
 {
     void *target;
 
     target = (void *)kallsyms_lookup_name("mod_verify_sig");
-    if (!target) {
+    if (!target)
         target = (void *)kallsyms_lookup_name("module_sig_check");
-        if (!target) {
-            pr_err("no_sig: symbol not found\n");
-            return -ENOENT;
-        }
-    }
+    if (!target)
+        return -ENOENT;
 
-    if (inline_hook(target, fake_mod_verify_sig, &hook_stub)) {
-        pr_err("no_sig: hook failed\n");
+    if (inline_hook(target, fake_mod_verify_sig, &hook_stub))
         return -EPERM;
-    }
 
-    pr_info("no_sig: module signature verify bypassed!\n");
     return 0;
 }
 
-/* 模块退出 */
-static void no_sig_exit(void)
+/* 模块出口：签名与 KPM 约定一致 */
+static long no_sig_exit(void *reserved)
 {
     if (hook_stub)
         inline_unhook(hook_stub);
-    pr_info("no_sig: unloaded\n");
+    return 0;
 }
 
 /* ---------- KPM 元信息 ---------- */
