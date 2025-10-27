@@ -1,87 +1,79 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
-/*
- * Copyright (C) 2023 lzghzr. All Rights Reserved.
- */
+// SPDX-License-Identifier: GPL-2.0
+#include <linux/module.h>
+#include <linux/kallsyms.h>
+#include <linux/slab.h>
 
-#include <compiler.h>
-#include <hook.h>
-#include <kpmodule.h>
-#include <kputils.h>
-#include <linux/kernel.h>
-#include <linux/printk.h>
+/* 内核符号 */
+static bool (*orig_mod_verify_sig)(const struct module *mod,
+                                   const struct module_signature *sig,
+                                   size_t sig_size);
 
-#include "xiiba_utils.h"
+/* 永远返回验证成功 */
+static bool fake_mod_verify_sig(const struct module *mod,
+                                const struct module_signature *sig,
+                                size_t sig_size)
+{
+    return true;
+}
 
-KPM_NAME("xperia_ii_battery_age");
-KPM_VERSION(XIIBA_VERSION);
-KPM_LICENSE("GPL v2");
-KPM_AUTHOR("lzghzr");
-KPM_DESCRIPTION("set xperia ii battery aging level");
+/* 保存 hook 句柄 */
+static void *hook_stub = NULL;
 
-#define FG_IMA_DEFAULT 0
-#define SOMC_AGING_LEVEL_WORD 291
-#define SOMC_AGING_LEVEL_OFFSET 0
+/* 外部 inline_hook 接口（KernelPatch 提供） */
+extern int inline_hook(void *target, void *new, void **old);
+extern int inline_unhook(void *stub);
 
-struct fg_dev;
+/* 模块入口 */
+static int __init no_sig_init(void)
+{
+    void *target;
 
-static int(*fg_sram_read)(struct fg_dev* fg, u16 address, u8 offset, u8* val, int len, int flags) = 0;
-static int(*fg_sram_write)(struct fg_dev* fg, u16 address, u8 offset, u8* val, int len, int flags) = 0;
-
-u8 aging = 0;
-struct fg_dev* fg = NULL;
-
-static long inline_hook_control0(const char* args, char* __user out_msg, int outlen) {
-  aging = args ? *args - '0' : 0;
-  if (aging > 5)
-    return -1;
-
-  int rc = fg_sram_write(fg, SOMC_AGING_LEVEL_WORD, SOMC_AGING_LEVEL_OFFSET, &aging, 1, FG_IMA_DEFAULT);
-  char echo[64] = "";
-  if (rc < 0) {
-    sprintf(echo, "error, rc=%d\n", rc);
-    logke("fg_sram_write %s", echo);
-    if (out_msg) {
-      compat_copy_to_user(out_msg, echo, sizeof(echo));
-      return 1;
+    /* 1. 解析符号 */
+    target = (void *)kallsyms_lookup_name("mod_verify_sig");
+    if (!target) {
+        /* 某些分支叫 module_sig_check */
+        target = (void *)kallsyms_lookup_name("module_sig_check");
+        if (!target) {
+            pr_err("no_sig: symbol not found\n");
+            return -ENOENT;
+        }
     }
-  } else {
-    sprintf(echo, "success, set batt_aging_level to %d\n", aging);
-    logki("fg_sram_write %s", echo);
-    if (out_msg) {
-      compat_copy_to_user(out_msg, echo, sizeof(echo));
-      return 0;
+
+    /* 2. 安装 hook */
+    if (inline_hook(target, fake_mod_verify_sig, &hook_stub)) {
+        pr_err("no_sig: hook failed\n");
+        return -EPERM;
     }
-  }
-  return 0;
+
+    pr_info("no_sig: module signature verify bypassed!\n");
+    return 0;
 }
 
-void before_read(hook_fargs6_t* args, void* udata) {
-  unhook_func(fg_sram_read);
-  fg = (struct fg_dev*)args->arg0;
-  // u8 *arg3 = (u8 *)args->arg3;
-  // logkd("before read fg: %llu, address: %u, offset: %u, val: %u, len: %d, flags: %d\n", args->arg0, (u16)args->arg1,
-  //       (u8)args->arg2, (u8)*arg3, (int)args->arg4, (int)args->arg5);
-  char age[] = "0";
-  age[0] = aging + '0';
-  inline_hook_control0(age, NULL, NULL);
+/* 模块退出 */
+static void __exit no_sig_exit(void)
+{
+    if (hook_stub)
+        inline_unhook(hook_stub);
+    pr_info("no_sig: unloaded\n");
 }
 
-static long inline_hook_init(const char* args, const char* event, void* __user reserved) {
-  aging = args ? *args - '0' : 0;
-  if (aging > 5)
-    return -1;
+/* KPM 元信息 */
+#define KPM_NAME "no_sig_verify"
+#define KPM_VERSION "1.0"
+#define KPM_LICENSE "GPL"
+#define KPM_AUTHOR "you"
+#define KPM_DESCRIPTION "Bypass module signature verification on 4.19"
 
-  lookup_name(fg_sram_write);
-  lookup_name(fg_sram_read);
-  hook_func(fg_sram_read, 6, before_read, 0, 0);
-  return 0;
-}
+/* 强制放入 .kpm.info */
+static const char __kpm_info_name[]       __attribute__((section(".kpm.info"))) = "name=" KPM_NAME;
+static const char __kpm_info_version[]    __attribute__((section(".kpm.info"))) = "version=" KPM_VERSION;
+static const char __kpm_info_license[]    __attribute__((section(".kpm.info"))) = "license=" KPM_LICENSE;
+static const char __kpm_info_author[]     __attribute__((section(".kpm.info"))) = "author=" KPM_AUTHOR;
+static const char __kpm_info_desc[]       __attribute__((section(".kpm.info"))) = "description=" KPM_DESCRIPTION;
 
-static long inline_hook_exit(void* __user reserved) {
-  unhook_func(fg_sram_read);
-  return 0;
-}
+/* 入口/出口 */
+typedef long (*kpm_initcall_t)(const char *args, const char *event, void *reserved);
+typedef long (*kpm_exitcall_t)(void *reserved);
 
-KPM_INIT(inline_hook_init);
-KPM_CTL0(inline_hook_control0);
-KPM_EXIT(inline_hook_exit);
+static kpm_initcall_t __kpm_initcall_no_sig __attribute__((section(".kpm.init"))) = no_sig_init;
+static kpm_exitcall_t __kpm_exitcall_no_sig __attribute__((section(".kpm.exit"))) = no_sig_exit;
