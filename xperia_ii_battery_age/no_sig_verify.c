@@ -2,6 +2,9 @@
 #include <linux/module.h>
 #include <linux/kallsyms.h>
 #include <linux/slab.h>
+#include <linux/init.h>
+#include <linux/module_signature.h>
+
 
 /* 内核符号 */
 static bool (*orig_mod_verify_sig)(const struct module *mod,
