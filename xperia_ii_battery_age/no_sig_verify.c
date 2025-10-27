@@ -2,8 +2,6 @@
 #include <linux/module.h>
 #include <linux/kallsyms.h>
 #include <linux/slab.h>
-#include <linux/init.h>
-#include <linux/module_signature.h>
 // 顶部加这几行即可
 #define __init __section(.init.text)
 #define __exit __section(.exit.text)
