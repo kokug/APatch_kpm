@@ -4,6 +4,19 @@
 #include <linux/slab.h>
 #include <linux/init.h>
 #include <linux/module_signature.h>
+// 顶部加这几行即可
+#define __init __section(.init.text)
+#define __exit __section(.exit.text)
+
+struct module_signature {
+    u8 algo;
+    u8 hash;
+    u8 id_type;
+    u8 signer_len;
+    u8 key_id_len;
+    u8 __pad[3];
+    u8 sig_len;
+};
 
 
 /* 内核符号 */
