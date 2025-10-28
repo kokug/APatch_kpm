@@ -14,6 +14,9 @@
 #include <linux/kallsyms.h>
 #include <linux/version.h>
 
+// 使用相对路径包含kpm_utils.h
+#include "../kpm_utils.h"
+
 /* ---------- KPM 元信息 ---------- */
 KPM_NAME("no_sig_verify");
 KPM_VERSION("1.1");
@@ -57,21 +60,11 @@ static long no_sig_verify_init(const char *args, const char *event, void *__user
             LINUX_VERSION_CODE & 0xFF,
             IS_ANDROID_ENV);
     
-    // 查找原始verify_module函数
-    original_verify_module = (typeof(original_verify_module))kallsyms_lookup_name("verify_module");
-    if (!original_verify_module) {
-        pr_err("no_sig_verify: failed to find verify_module symbol\n");
-        return -ENOENT;
-    }
+    // 使用kpm_utils.h中的lookup_name宏查找原始verify_module函数
+    lookup_name(original_verify_module);
     
-    pr_info("no_sig_verify: found verify_module at %p\n", original_verify_module);
-    
-    // Hook verify_module函数
-    ret = hook_func((void *)original_verify_module, (void *)hooked_verify_module, NULL);
-    if (ret) {
-        pr_err("no_sig_verify: failed to hook verify_module, error: %d\n", ret);
-        return ret;
-    }
+    // 使用kpm_utils.h中的hook_func宏Hook verify_module函数
+    hook_func(original_verify_module, NULL, (void *)hooked_verify_module, NULL, NULL);
     
     pr_info("no_sig_verify: successfully hooked verify_module\n");
     return 0;
@@ -100,8 +93,8 @@ static long no_sig_verify_exit(void *__user reserved)
     pr_info("no_sig_verify: exiting, restoring original verify_module\n");
     
     if (original_verify_module) {
-        // 恢复原始函数
-        unhook_func((void *)original_verify_module);
+        // 使用kpm_utils.h中的unhook_func宏恢复原始函数
+        unhook_func(original_verify_module);
         pr_info("no_sig_verify: original verify_module restored\n");
     }
     
