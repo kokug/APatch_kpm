@@ -4,7 +4,7 @@
  *  KernelPatch native utilities
  */
 
-#include <kpm_utils.h>
+#include "../kpm_utils.h"
 #include <linux/kallsyms.h>
 
 /* 函数指针保存 */
