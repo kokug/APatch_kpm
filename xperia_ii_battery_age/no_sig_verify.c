@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/kallsyms.h>
 
+typedef int bool;
+#define true  1
+#define false 0
+#define ENOENT 2
+#define EPERM  1
+
 static bool *mod_signing_enabled;
 
 static long no_sig_init(const char *a, const char *e, void *r)
