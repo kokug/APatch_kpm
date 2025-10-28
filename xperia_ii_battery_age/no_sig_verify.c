@@ -1,48 +1,58 @@
 // SPDX-License-Identifier: GPL-2.0
+/*
+ *  Runtime bypass module signature verification
+ *  KernelPatch native utilities
+ */
+
+#include <kpm_utils.h>
 #include <linux/kallsyms.h>
 
-typedef int bool;
-#define true  1
-#define false 0
-#define ENOENT 2
-#define EPERM  1
+/* 函数指针保存 */
+static int (*orig_verify_module)(const struct module *mod,
+                                 const struct module_signature *sig,
+                                 size_t sig_size);
 
-static bool *mod_signing_enabled;
-
-static long no_sig_init(const char *a, const char *e, void *r)
+/* 永远返回成功 */
+static int fake_verify_module(const struct module *mod,
+                              const struct module_signature *sig,
+                              size_t sig_size)
 {
-    mod_signing_enabled = (bool *)kallsyms_lookup_name("mod_signing_enabled");
-    if (!mod_signing_enabled)
-        return -ENOENT;
-    *mod_signing_enabled = false;
+    return 0; /* = 0 表示验证通过 */
+}
+
+static void *hook_stub;
+
+static long no_sig_init(const char *args, const char *event, void *reserved)
+{
+    /* 1. 找符号（KernelPatch 官方宏） */
+    lookup_name(orig_verify_module);
+
+    /* 2. 安装 hook（KernelPatch 官方宏） */
+    hook_func(orig_verify_module, NULL, fake_verify_module, NULL, NULL);
+
+    pr_info("no_sig: verify_module hooked → always pass\n");
     return 0;
 }
 
-static long no_sig_exit(void *r)
+static long no_sig_exit(void *reserved)
 {
-    if (mod_signing_enabled)
-        *mod_signing_enabled = true;
+    unhook_func(orig_verify_module);
+    pr_info("no_sig: verify_module unhooked → back to normal\n");
     return 0;
 }
 
+/* ---------- KPM 元信息 ---------- */
 #define KPM_NAME "no_sig_verify"
 #define KPM_VERSION "1.0"
 #define KPM_LICENSE "GPL"
 #define KPM_AUTHOR "you"
-#define KPM_DESCRIPTION "Toggle mod_signing_enabled at runtime"
+#define KPM_DESCRIPTION "Runtime hook verify_module to bypass signature check"
 
-__attribute__((section(".kpm.info"))) static const char
-    __kpm_info_name[]       = "name=" KPM_NAME,
-    __kpm_info_version[]    = "version=" KPM_VERSION,
-    __kpm_info_license[]    = "license=" KPM_LICENSE,
-    __kpm_info_author[]     = "author=" KPM_AUTHOR,
-    __kpm_info_desc[]       = "description=" KPM_DESCRIPTION;
+KPM_INFO(name, KPM_NAME);
+KPM_INFO(version, KPM_VERSION);
+KPM_INFO(license, KPM_LICENSE);
+KPM_INFO(author, KPM_AUTHOR);
+KPM_INFO(description, KPM_DESCRIPTION);
 
-typedef long (*kpm_initcall_t)(const char *, const char *, void *);
-typedef long (*kpm_exitcall_t)(void *);
-
-__attribute__((section(".kpm.init")))
-static kpm_initcall_t __kpm_initcall_no_sig = no_sig_init;
-
-__attribute__((section(".kpm.exit")))
-static kpm_exitcall_t __kpm_exitcall_no_sig = no_sig_exit;
+KPM_INIT(no_sig_init);
+KPM_EXIT(no_sig_exit);
