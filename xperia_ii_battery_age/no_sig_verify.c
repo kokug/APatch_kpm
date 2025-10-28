@@ -19,7 +19,7 @@
 
 /* ---------- KPM 元信息 ---------- */
 KPM_NAME("no_sig_verify");
-KPM_VERSION("1.1");
+KPM_VERSION("1.1.0");
 KPM_LICENSE("GPL v2");
 KPM_AUTHOR("you");
 KPM_DESCRIPTION("Runtime hook verify_module to bypass signature check");
@@ -41,16 +41,13 @@ static int (*original_verify_module)(struct module *mod) = NULL;
 /* ---------- Hook函数 ---------- */
 static int hooked_verify_module(struct module *mod)
 {
-    pr_info("no_sig_verify: bypassing signature verification for module: %s\n", 
-            mod ? mod->name : "unknown");
+    pr_info("no_sig_verify: bypassing signature verification for module\n");
     return 0; // 始终返回成功
 }
 
 /* ---------- KPM初始化函数 ---------- */
 static long no_sig_verify_init(const char *args, const char *event, void *__user reserved)
 {
-    int ret;
-    
     pr_info("no_sig_verify: initializing module signature bypass\n");
     
     // 兼容性信息
